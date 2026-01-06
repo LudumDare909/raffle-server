@@ -1,0 +1,10 @@
+{
+  "raffles": [
+    {
+      "raffleId": "raffle_001",
+      "title": "Розыгрыш недели",
+      "prize": "500 монет",
+      "participants": []
+    }
+  ]
+}
