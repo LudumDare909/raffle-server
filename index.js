@@ -7,15 +7,11 @@ const PORT = process.env.PORT || 3000;
 const DATA_PATH = "./data/raffles.json";
 const ADMIN_KEY = process.env.ADMIN_KEY || "super_secret_key";
 
-// ----------------------------
-// Middleware
-// ----------------------------
+
 app.use(cors());
 app.use(express.json());
 
-// ----------------------------
-// Утилита: загрузка данных
-// ----------------------------
+
 async function loadData() {
   if (!(await fs.pathExists(DATA_PATH))) {
     await fs.outputJson(DATA_PATH, { raffles: [] }, { spaces: 2 });
@@ -23,9 +19,7 @@ async function loadData() {
   return fs.readJson(DATA_PATH);
 }
 
-// ----------------------------
-// Middleware: проверка админ-ключа
-// ----------------------------
+
 function checkAdminKey(req, res, next) {
   const key = req.header("X-ADMIN-KEY");
   if (!key || key !== ADMIN_KEY) {
@@ -34,19 +28,13 @@ function checkAdminKey(req, res, next) {
   next();
 }
 
-// ----------------------------
-// GET /raffles
-// Получить все розыгрыши
-// ----------------------------
+
 app.get("/raffles", async (req, res) => {
   const data = await loadData();
   res.json(data.raffles);
 });
 
-// ----------------------------
-// GET /raffle/:id
-// Получить один розыгрыш
-// ----------------------------
+
 app.get("/raffle/:id", async (req, res) => {
   const data = await loadData();
   const raffle = data.raffles.find(r => r.id === parseInt(req.params.id));
@@ -55,10 +43,7 @@ app.get("/raffle/:id", async (req, res) => {
   res.json(raffle);
 });
 
-// ----------------------------
-// POST /raffle/create
-// Создать новый розыгрыш (только админ)
-// ----------------------------
+
 app.post("/raffle/create", checkAdminKey, async (req, res) => {
   const { id, title, prize, status, dateTime } = req.body;
 
@@ -86,10 +71,7 @@ app.post("/raffle/create", checkAdminKey, async (req, res) => {
   res.json({ status: "created", raffle: newRaffle });
 });
 
-// ----------------------------
-// POST /raffle/join
-// Участие в розыгрыше
-// ----------------------------
+
 app.post("/raffle/join", async (req, res) => {
   const { raffleId, nickname, email } = req.body;
 
@@ -101,7 +83,7 @@ app.post("/raffle/join", async (req, res) => {
   const raffle = data.raffles.find(r => r.id === raffleId);
   if (!raffle) return res.status(404).json({ error: "raffle not found" });
 
-  // Проверка дубликатов по email или nickname
+  // ГЏГ°Г®ГўГҐГ°ГЄГ  Г¤ГіГЎГ«ГЁГЄГ ГІГ®Гў ГЇГ® email ГЁГ«ГЁ nickname
   if (raffle.participants.find(p => p.email === email || p.nickname === nickname)) {
     return res.json({ status: "already_joined" });
   }
@@ -112,10 +94,7 @@ app.post("/raffle/join", async (req, res) => {
   res.json({ status: "joined", total: raffle.participants.length });
 });
 
-// ----------------------------
-// POST /raffle/finish/:id
-// Завершение розыгрыша + запись победителя (только админ)
-// ----------------------------
+
 app.post("/raffle/finish/:id", checkAdminKey, async (req, res) => {
   const { winner } = req.body;
   if (!winner) return res.status(400).json({ error: "winner is required" });
@@ -132,10 +111,7 @@ app.post("/raffle/finish/:id", checkAdminKey, async (req, res) => {
   res.json({ status: "raffle_finished", raffle });
 });
 
-// ----------------------------
-// DELETE /raffle/:id
-// Удаление розыгрыша (только админ)
-// ----------------------------
+
 app.delete("/raffle/:id", checkAdminKey, async (req, res) => {
   const data = await loadData();
   const index = data.raffles.findIndex(r => r.id === parseInt(req.params.id));
@@ -147,16 +123,12 @@ app.delete("/raffle/:id", checkAdminKey, async (req, res) => {
   res.json({ status: "deleted", raffle: removed[0] });
 });
 
-// ----------------------------
-// Корень сервера
-// ----------------------------
+
 app.get("/", (req, res) => {
   res.send("Raffle server is running");
 });
 
-// ----------------------------
-// Запуск сервера
-// ----------------------------
+
 app.listen(PORT, () => {
   console.log("Server running on port " + PORT);
 });
