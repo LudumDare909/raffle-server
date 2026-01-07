@@ -5,6 +5,7 @@ const fs = require("fs-extra");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_PATH = "./data/raffles.json";
+const ADMIN_KEY = process.env.ADMIN_KEY || "super_secret_key";
 
 // ----------------------------
 // Middleware
@@ -23,6 +24,17 @@ async function loadData() {
 }
 
 // ----------------------------
+// Middleware: проверка админ-ключа
+// ----------------------------
+function checkAdminKey(req, res, next) {
+  const key = req.header("X-ADMIN-KEY");
+  if (!key || key !== ADMIN_KEY) {
+    return res.status(403).json({ error: "Forbidden: invalid ADMIN_KEY" });
+  }
+  next();
+}
+
+// ----------------------------
 // GET /raffles
 // Получить все розыгрыши
 // ----------------------------
@@ -37,81 +49,106 @@ app.get("/raffles", async (req, res) => {
 // ----------------------------
 app.get("/raffle/:id", async (req, res) => {
   const data = await loadData();
-  const raffle = data.raffles.find(r => r.raffleId === req.params.id);
+  const raffle = data.raffles.find(r => r.id === parseInt(req.params.id));
 
-  if (!raffle) {
-    return res.status(404).json({ error: "raffle not found" });
-  }
-
+  if (!raffle) return res.status(404).json({ error: "raffle not found" });
   res.json(raffle);
 });
 
 // ----------------------------
 // POST /raffle/create
-// Создать новый розыгрыш
+// Создать новый розыгрыш (только админ)
 // ----------------------------
-app.post("/raffle/create", async (req, res) => {
-  const { raffleId, title } = req.body;
+app.post("/raffle/create", checkAdminKey, async (req, res) => {
+  const { id, title, prize, status, dateTime } = req.body;
 
-  if (!raffleId) {
-    return res.status(400).json({ error: "raffleId is required" });
+  if (id == null || !title || prize == null || !status || !dateTime) {
+    return res.status(400).json({ error: "Missing required fields" });
   }
 
   const data = await loadData();
-
-  const exists = data.raffles.find(r => r.raffleId === raffleId);
-  if (exists) {
-    return res.status(400).json({ error: "raffle already exists" });
-  }
+  const exists = data.raffles.find(r => r.id === id);
+  if (exists) return res.status(400).json({ error: "Raffle already exists" });
 
   const newRaffle = {
-    raffleId,
-    title: title || "",
+    id,
+    title,
+    prize,
+    status,
+    winner: "",
+    dateTime,
     participants: []
   };
 
   data.raffles.push(newRaffle);
   await fs.writeJson(DATA_PATH, data, { spaces: 2 });
 
-  res.json({
-    status: "created",
-    raffle: newRaffle
-  });
+  res.json({ status: "created", raffle: newRaffle });
 });
 
 // ----------------------------
 // POST /raffle/join
-// Отправить участие
+// Участие в розыгрыше
 // ----------------------------
 app.post("/raffle/join", async (req, res) => {
-  const { raffleId, playerId } = req.body;
+  const { raffleId, nickname, email } = req.body;
 
-  if (!raffleId || !playerId) {
+  if (raffleId == null || !nickname || !email) {
     return res.status(400).json({ error: "invalid data" });
   }
 
   const data = await loadData();
-  const raffle = data.raffles.find(r => r.raffleId === raffleId);
+  const raffle = data.raffles.find(r => r.id === raffleId);
+  if (!raffle) return res.status(404).json({ error: "raffle not found" });
 
-  if (!raffle) {
-    return res.status(404).json({ error: "raffle not found" });
-  }
-
-  if (raffle.participants.includes(playerId)) {
+  // Проверка дубликатов по email или nickname
+  if (raffle.participants.find(p => p.email === email || p.nickname === nickname)) {
     return res.json({ status: "already_joined" });
   }
 
-  raffle.participants.push(playerId);
+  raffle.participants.push({ nickname, email });
   await fs.writeJson(DATA_PATH, data, { spaces: 2 });
 
-  res.json({
-    status: "joined",
-    total: raffle.participants.length
-  });
+  res.json({ status: "joined", total: raffle.participants.length });
 });
 
 // ----------------------------
-// Корень (не обязательно, но удобно)
+// POST /raffle/finish/:id
+// Завершение розыгрыша + запись победителя (только админ)
+// ----------------------------
+app.post("/raffle/finish/:id", checkAdminKey, async (req, res) => {
+  const { winner } = req.body;
+  if (!winner) return res.status(400).json({ error: "winner is required" });
+
+  const data = await loadData();
+  const raffle = data.raffles.find(r => r.id === parseInt(req.params.id));
+  if (!raffle) return res.status(404).json({ error: "raffle not found" });
+
+  raffle.winner = winner;
+  raffle.status = "finished";
+
+  await fs.writeJson(DATA_PATH, data, { spaces: 2 });
+
+  res.json({ status: "raffle_finished", raffle });
+});
+
+// ----------------------------
+// DELETE /raffle/:id
+// Удаление розыгрыша (только админ)
+// ----------------------------
+app.delete("/raffle/:id", checkAdminKey, async (req, res) => {
+  const data = await loadData();
+  const index = data.raffles.findIndex(r => r.id === parseInt(req.params.id));
+  if (index === -1) return res.status(404).json({ error: "raffle not found" });
+
+  const removed = data.raffles.splice(index, 1);
+  await fs.writeJson(DATA_PATH, data, { spaces: 2 });
+
+  res.json({ status: "deleted", raffle: removed[0] });
+});
+
+// ----------------------------
+// Корень сервера
 // ----------------------------
 app.get("/", (req, res) => {
   res.send("Raffle server is running");
