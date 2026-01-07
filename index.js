@@ -3,7 +3,7 @@ const cors = require("cors");
 const fs = require("fs-extra");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 const DATA_PATH = "./data/raffles.json";
 const ADMIN_KEY = process.env.ADMIN_KEY || "super_secret_key";
 
