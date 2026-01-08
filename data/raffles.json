@@ -1,16 +1,3 @@
 {
-  "raffles": [
-{
-  "id": 1,
-  "title": "New Year Raffle",
-  "prize": 100,
-  "status": "active",
-  "winner": "",
-  "dateTime": "2026-01-08T18:00:00Z",
-  "participants": [
-    {
-      "nickname": "PlayerOne",
-      "email": "player@mail.com"
-    }
-  ]
+  "raffles": []
 }
