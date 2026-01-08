@@ -7,11 +7,13 @@ const PORT = process.env.PORT || 10000;
 const DATA_PATH = "./data/raffles.json";
 const ADMIN_KEY = process.env.ADMIN_KEY || "super_secret_key";
 
-
 app.use(cors());
 app.use(express.json());
 
 
+// ==================================================
+// UTILS
+// ==================================================
 async function loadData() {
   if (!(await fs.pathExists(DATA_PATH))) {
     await fs.outputJson(DATA_PATH, { raffles: [] }, { spaces: 2 });
@@ -19,6 +21,9 @@ async function loadData() {
   return fs.readJson(DATA_PATH);
 }
 
+async function saveData(data) {
+  await fs.writeJson(DATA_PATH, data, { spaces: 2 });
+}
 
 function checkAdminKey(req, res, next) {
   const key = req.header("X-ADMIN-KEY");
@@ -29,106 +34,197 @@ function checkAdminKey(req, res, next) {
 }
 
 
+// ==================================================
+// GET ALL RAFFLES
+// ==================================================
 app.get("/raffles", async (req, res) => {
-  const data = await loadData();
-  res.json(data.raffles);
+  try {
+    const data = await loadData();
+    res.json(data.raffles);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
 });
 
 
+// ==================================================
+// GET RAFFLE BY ID
+// ==================================================
 app.get("/raffle/:id", async (req, res) => {
-  const data = await loadData();
-  const raffle = data.raffles.find(r => r.id === parseInt(req.params.id));
+  try {
+    const data = await loadData();
+    const raffle = data.raffles.find(
+      r => Number(r.id) === Number(req.params.id)
+    );
 
-  if (!raffle) return res.status(404).json({ error: "raffle not found" });
-  res.json(raffle);
+    if (!raffle) {
+      return res.status(404).json({ error: "raffle not found" });
+    }
+
+    res.json(raffle);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
 });
 
 
+// ==================================================
+// CREATE RAFFLE (ADMIN)
+// ==================================================
 app.post("/raffle/create", checkAdminKey, async (req, res) => {
-  const { id, title, prize, status, dateTime } = req.body;
+  try {
+    const { id, title, prize, status, dateTime } = req.body;
 
-  if (id == null || !title || prize == null || !status || !dateTime) {
-    return res.status(400).json({ error: "Missing required fields" });
+    if (
+      id === undefined ||
+      !title ||
+      prize === undefined ||
+      !status ||
+      !dateTime
+    ) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const data = await loadData();
+
+    if (data.raffles.find(r => Number(r.id) === Number(id))) {
+      return res.status(400).json({ error: "Raffle already exists" });
+    }
+
+    const newRaffle = {
+      id: Number(id),
+      title,
+      prize: Number(prize),
+      status,
+      winner: "",
+      dateTime,
+      participants: []
+    };
+
+    data.raffles.push(newRaffle);
+    await saveData(data);
+
+    res.json({ status: "created", raffle: newRaffle });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
   }
-
-  const data = await loadData();
-  const exists = data.raffles.find(r => r.id === id);
-  if (exists) return res.status(400).json({ error: "Raffle already exists" });
-
-  const newRaffle = {
-    id,
-    title,
-    prize,
-    status,
-    winner: "",
-    dateTime,
-    participants: []
-  };
-
-  data.raffles.push(newRaffle);
-  await fs.writeJson(DATA_PATH, data, { spaces: 2 });
-
-  res.json({ status: "created", raffle: newRaffle });
 });
 
 
+// ==================================================
+// JOIN RAFFLE
+// ==================================================
 app.post("/raffle/join", async (req, res) => {
-  const { raffleId, nickname, email } = req.body;
+  try {
+    const { raffleId, nickname, email } = req.body;
 
-  if (raffleId == null || !nickname || !email) {
-    return res.status(400).json({ error: "invalid data" });
+    if (raffleId === undefined || !nickname || !email) {
+      return res.status(400).json({ error: "invalid data" });
+    }
+
+    const data = await loadData();
+    const raffle = data.raffles.find(
+      r => Number(r.id) === Number(raffleId)
+    );
+
+    if (!raffle) {
+      return res.status(404).json({ error: "raffle not found" });
+    }
+
+    raffle.participants = raffle.participants || [];
+
+    if (
+      raffle.participants.find(
+        p => p.email === email || p.nickname === nickname
+      )
+    ) {
+      return res.json({ status: "already_joined" });
+    }
+
+    raffle.participants.push({ nickname, email });
+    await saveData(data);
+
+    res.json({
+      status: "joined",
+      total: raffle.participants.length
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
   }
-
-  const data = await loadData();
-  const raffle = data.raffles.find(r => r.id === raffleId);
-  if (!raffle) return res.status(404).json({ error: "raffle not found" });
-
-  // Ïðîâåðêà äóáëèêàòîâ ïî email èëè nickname
-  if (raffle.participants.find(p => p.email === email || p.nickname === nickname)) {
-    return res.json({ status: "already_joined" });
-  }
-
-  raffle.participants.push({ nickname, email });
-  await fs.writeJson(DATA_PATH, data, { spaces: 2 });
-
-  res.json({ status: "joined", total: raffle.participants.length });
 });
 
 
+// ==================================================
+// FINISH RAFFLE (ADMIN)
+// ==================================================
 app.post("/raffle/finish/:id", checkAdminKey, async (req, res) => {
-  const { winner } = req.body;
-  if (!winner) return res.status(400).json({ error: "winner is required" });
+  try {
+    const { winner } = req.body;
+    if (!winner) {
+      return res.status(400).json({ error: "winner is required" });
+    }
 
-  const data = await loadData();
-  const raffle = data.raffles.find(r => r.id === parseInt(req.params.id));
-  if (!raffle) return res.status(404).json({ error: "raffle not found" });
+    const data = await loadData();
+    const raffle = data.raffles.find(
+      r => Number(r.id) === Number(req.params.id)
+    );
 
-  raffle.winner = winner;
-  raffle.status = "finished";
+    if (!raffle) {
+      return res.status(404).json({ error: "raffle not found" });
+    }
 
-  await fs.writeJson(DATA_PATH, data, { spaces: 2 });
+    raffle.winner = winner;
+    raffle.status = "finished";
 
-  res.json({ status: "raffle_finished", raffle });
+    await saveData(data);
+    res.json({ status: "raffle_finished", raffle });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
 });
 
 
+// ==================================================
+// DELETE RAFFLE (ADMIN)
+// ==================================================
 app.delete("/raffle/:id", checkAdminKey, async (req, res) => {
-  const data = await loadData();
-  const index = data.raffles.findIndex(r => r.id === parseInt(req.params.id));
-  if (index === -1) return res.status(404).json({ error: "raffle not found" });
+  try {
+    const data = await loadData();
+    const index = data.raffles.findIndex(
+      r => Number(r.id) === Number(req.params.id)
+    );
 
-  const removed = data.raffles.splice(index, 1);
-  await fs.writeJson(DATA_PATH, data, { spaces: 2 });
+    if (index === -1) {
+      return res.status(404).json({ error: "raffle not found" });
+    }
 
-  res.json({ status: "deleted", raffle: removed[0] });
+    const removed = data.raffles.splice(index, 1)[0];
+    await saveData(data);
+
+    res.json({ status: "deleted", raffle: removed });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
 });
 
 
+// ==================================================
+// ROOT
+// ==================================================
 app.get("/", (req, res) => {
   res.send("Raffle server is running");
 });
 
 
+// ==================================================
+// START
+// ==================================================
 app.listen(PORT, () => {
   console.log("Server running on port " + PORT);
 });
